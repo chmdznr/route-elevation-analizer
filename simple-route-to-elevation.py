@@ -280,16 +280,38 @@ class ImprovedRouteAnalyzer:
         
         return df
     
-    def plot_route_map(self, df: pd.DataFrame):
-        """Generate and save a static map with the route."""
+    def plot_route_map(self, df: pd.DataFrame, grade_threshold: float = 15.0):
+        """
+        Generate and save a static map with the route, highlighting steep segments.
+        
+        Args:
+            df: DataFrame with route data
+            grade_threshold: Grade percentage to mark as steep
+        """
         try:
-            # Generate static map URL using overview_polyline
+            # Find steep sections
+            steep_ascents = df[df['grade'] > grade_threshold]
+            steep_descents = df[df['grade'] < -grade_threshold]
+            
+            # Base map URL
             map_url = f"https://maps.googleapis.com/maps/api/staticmap?"
             map_url += f"size=2048x2048&scale=2"  # High resolution map
             map_url += f"&maptype=roadmap"
-            map_url += f"&path=enc:{self.route_info['overview_polyline']}"
-            map_url += f"&markers=color:green|label:A|{df.iloc[0]['lat']},{df.iloc[0]['lng']}"  # Start point
-            map_url += f"&markers=color:red|label:B|{df.iloc[-1]['lat']},{df.iloc[-1]['lng']}"  # End point
+            
+            # Main route path (blue)
+            map_url += f"&path=color:blue|weight:2|enc:{self.route_info['overview_polyline']}"
+            
+            # Add steep ascents (red)
+            for _, section in steep_ascents.iterrows():
+                map_url += f"&markers=color:red|size:tiny|{section['lat']},{section['lng']}"
+                
+            # Add steep descents (orange)
+            for _, section in steep_descents.iterrows():
+                map_url += f"&markers=color:orange|size:tiny|{section['lat']},{section['lng']}"
+            
+            # Start and end markers
+            map_url += f"&markers=color:green|label:A|{df.iloc[0]['lat']},{df.iloc[0]['lng']}"
+            map_url += f"&markers=color:red|label:B|{df.iloc[-1]['lat']},{df.iloc[-1]['lng']}"
             map_url += f"&key={self.api_key}"
             
             # Download and save the map
@@ -404,7 +426,7 @@ def main():
 
     # Generate and display route map
     analyzer.plot_route_map(df)
-    
+
 #%% main call
 if __name__ == "__main__":
     main()
