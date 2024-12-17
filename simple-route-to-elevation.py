@@ -158,57 +158,6 @@ class ImprovedRouteAnalyzer:
             # If error occurs (e.g., window too large), fall back to simple moving average
             return pd.Series(elevations).rolling(window=5, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
             
-    def _adaptive_resampling(self, points: List[Dict], base_interval: float = 50.0, min_interval: float = 15.0) -> List[Dict]:
-        """
-        Adaptively resample points based on terrain complexity.
-        Uses finer sampling in steeper sections.
-        """
-        resampled_points = []
-        last_point = points[0]
-        resampled_points.append(last_point)
-        
-        for i in range(1, len(points)):
-            point = points[i]
-            
-            # Calculate elevation change and distance
-            elev_change = abs(point['elevation'] - last_point['elevation'])
-            dist = geodesic((last_point['lat'], last_point['lng']), (point['lat'], point['lng'])).meters
-            
-            if dist == 0:
-                continue
-                
-            # Calculate local grade
-            local_grade = (elev_change / dist) * 100
-            
-            # Adjust sampling interval based on grade
-            if local_grade > 15:
-                interval = min_interval
-            elif local_grade > 8:
-                interval = (base_interval + min_interval) / 2
-            else:
-                interval = base_interval
-                
-            # Interpolate points if needed
-            if dist > interval:
-                num_points = int(dist / interval)
-                for j in range(1, num_points):
-                    fraction = j / num_points
-                    new_lat = last_point['lat'] + fraction * (point['lat'] - last_point['lat'])
-                    new_lng = last_point['lng'] + fraction * (point['lng'] - last_point['lng'])
-                    new_elevation = last_point['elevation'] + fraction * (point['elevation'] - last_point['elevation'])
-                    
-                    resampled_points.append({
-                        'lat': new_lat,
-                        'lng': new_lng,
-                        'elevation': new_elevation,
-                        'distance': resampled_points[-1]['distance'] + interval
-                    })
-                    
-            last_point = point
-            resampled_points.append(point)
-            
-        return resampled_points
-
     def get_elevations(self, points: List[Dict]) -> List[Dict]:
         """Get elevations for a list of points."""
         # Batch points into groups of 512 (API limit)
