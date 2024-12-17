@@ -9,7 +9,8 @@ import re
 import polyline
 import requests
 from scipy.signal import savgol_filter
-from scipy.interpolate import interp1d
+import os
+from dotenv import load_dotenv
 
 class ImprovedRouteAnalyzer:
     def __init__(self, api_key: str):
@@ -386,8 +387,13 @@ class ImprovedRouteAnalyzer:
                 print(f"  • Duration: {step['duration']}")
 
 def main():
+    # Load environment variables
+    load_dotenv()
+    api_key = os.getenv('GOOGLE_MAPS_API_KEY')
+    if not api_key:
+        raise ValueError("Google Maps API key not found in environment variables")
+    
     # Example usage
-    api_key = "AIzaSyDFlIAWpmwrpQdYPMTQLSkTVjohoeIiOws"  # Replace with your API key
     analyzer = ImprovedRouteAnalyzer(api_key)
     
     # Analyze route using coordinates
