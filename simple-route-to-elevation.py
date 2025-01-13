@@ -11,6 +11,7 @@ import requests
 from scipy.signal import savgol_filter
 import os
 from dotenv import load_dotenv
+from scipy import interpolate
 
 class ImprovedRouteAnalyzer:
     def __init__(self, api_key: str):
@@ -159,21 +160,71 @@ class ImprovedRouteAnalyzer:
             return pd.Series(elevations).rolling(window=5, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
             
     def get_elevations(self, points: List[Dict]) -> List[Dict]:
-        """Get elevations for a list of points."""
+        """
+        Get elevations for a list of points, handling missing data with interpolation.
+        
+        Returns:
+            List[Dict]: Points with elevation data, using interpolation for missing points
+        """
         # Batch points into groups of 512 (API limit)
         point_groups = [points[i:i + 512] for i in range(0, len(points), 512)]
         
-        for group in point_groups:
-            # Get elevations for this batch
-            locations = [(p['lat'], p['lng']) for p in group]
-            results = self.gmaps.elevation(locations)
-            
-            # Add elevation data to points
-            for point, result in zip(group, results):
-                point['elevation'] = result['elevation']
+        try:
+            for group in point_groups:
+                # Get elevations for this batch
+                locations = [(p['lat'], p['lng']) for p in group]
+                results = self.gmaps.elevation(locations)
                 
-        return points
-        
+                # Process results and handle missing data
+                for point, result in zip(group, results):
+                    if result and 'elevation' in result:
+                        point['elevation'] = result['elevation']
+                    else:
+                        # Mark point for interpolation
+                        point['elevation'] = None
+                        print(f"Warning: No elevation data available for coordinates: {point['lat']}, {point['lng']}")
+            
+            # After collecting all data, interpolate missing values
+            points_with_elevation = [p for p in points if p['elevation'] is not None]
+            points_without_elevation = [p for p in points if p['elevation'] is None]
+            
+            if points_without_elevation:
+                print(f"Interpolating elevation for {len(points_without_elevation)} points...")
+                
+                if len(points_with_elevation) >= 2:
+                    # Create interpolation function from valid points
+                    valid_distances = [p['distance'] for p in points_with_elevation]
+                    valid_elevations = [p['elevation'] for p in points_with_elevation]
+                    
+                    f = interpolate.interp1d(valid_distances, valid_elevations, 
+                                           kind='linear', bounds_error=False, 
+                                           fill_value=(valid_elevations[0], valid_elevations[-1]))
+                    
+                    # Interpolate missing elevations
+                    for point in points_without_elevation:
+                        point['elevation'] = float(f(point['distance']))
+                else:
+                    # If we don't have enough points for interpolation, use nearest valid elevation
+                    default_elevation = (points_with_elevation[0]['elevation'] 
+                                      if points_with_elevation 
+                                      else 0.0)
+                    for point in points_without_elevation:
+                        point['elevation'] = default_elevation
+            
+            return points
+                
+        except Exception as e:
+            if isinstance(e, googlemaps.exceptions.ApiError) and str(e) == "DATA_NOT_AVAILABLE":
+                print("Warning: Some elevation data points were not available")
+            else:
+                print(f"Warning: Unexpected error while getting elevation data: {str(e)}")
+            
+            # If we have a catastrophic failure, return points with zero elevation
+            for point in points:
+                if 'elevation' not in point or point['elevation'] is None:
+                    point['elevation'] = 0.0
+            return points
+    
     def analyze_route(self, origin: str, destination: str, base_sampling_interval: float = 50.0) -> pd.DataFrame:
         """
         Analyze a route's elevation profile with improved accuracy.
@@ -348,7 +399,8 @@ def main():
     # Analyze route using coordinates
     df = analyzer.analyze_route(
         origin="-7.076283,110.4264041",      # Start point
-        destination="-7.6694298,111.1413488", # End point
+        # destination="-7.6694298,111.1413488", # End point
+        destination="-7.106871,108.104737", # End point
         base_sampling_interval=25.0
     )
     
